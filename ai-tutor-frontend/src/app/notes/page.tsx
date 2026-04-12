@@ -147,58 +147,90 @@ export default function NotesPage() {
   //////////////////////////////////////////////////////
   // UPLOAD
   //////////////////////////////////////////////////////
-  const upload = async () => {
-    const files = fileRef.current?.files;
+ const upload = async () => {
+  const files = fileRef.current?.files;
 
-    if (!files || files.length === 0) {
-      return toast.error("Select file(s)");
-    }
+  if (!files || files.length === 0) {
+    return toast.error("Select file(s)");
+  }
 
-    setUploading(true);
-    toast.loading("Uploading...");
+  setUploading(true);
+  toast.loading("Uploading...");
 
-    try {
-      for (let file of Array.from(files)) {
-        const formData = new FormData();
-        formData.append("file", file);
+  try {
+    for (let file of Array.from(files)) {
+      const formData = new FormData();
+      formData.append("file", file);
 
-        const res = await uploadDocument(formData);
+      // 🔥 FIRST TRY (NORMAL UPLOAD)
+      const res = await uploadDocument(formData, false);
 
-        const existsInSidebar = chats.some(
-          (c) => c.document?.name === file.name
+      //////////////////////////////////////////////////////
+      // 🔥 DUPLICATE FILE DETECTED
+      //////////////////////////////////////////////////////
+      if (res.data.reused) {
+        toast.dismiss();
+
+        const action = window.confirm(
+          `⚠️ "${file.name}" already exists.\n\nOK → Replace file\nCancel → Continue existing chat`
         );
 
-        if (res.data.reused && existsInSidebar) {
-          const confirmReplace = window.confirm(
-            `${file.name} already exists.\n\nOK = Replace\nCancel = Open old`
-          );
+        //////////////////////////////////////////////////////
+        // 🔁 REPLACE FLOW
+        //////////////////////////////////////////////////////
+        if (action) {
+          toast.loading("Replacing document...");
 
-          if (confirmReplace) {
-            const replaceRes = await uploadDocument(formData, true);
-            await openChat(replaceRes.data.chatSessionId);
-          } else {
-            await openChat(res.data.chatSessionId);
-          }
-        } else {
-          await openChat(res.data.chatSessionId);
+          const replaceRes = await uploadDocument(formData, true);
+
+          toast.dismiss();
+          toast.success("File replaced ✅");
+
+          await openChat(replaceRes.data.chatSessionId);
         }
 
-        setChatFiles((prev) =>
-          prev.includes(file.name) ? prev : [...prev, file.name]
-        );
+        //////////////////////////////////////////////////////
+        // 🔄 CONTINUE EXISTING CHAT
+        //////////////////////////////////////////////////////
+        else {
+          toast.success("Opening existing chat 📂");
+
+          await openChat(res.data.chatSessionId);
+        }
       }
 
-      toast.dismiss();
-      toast.success("Upload complete 🚀");
-      loadChats();
-    } catch {
-      toast.dismiss();
-      toast.error("Upload failed");
-    } finally {
-      setUploading(false);
-      if (fileRef.current) fileRef.current.value = "";
+      //////////////////////////////////////////////////////
+      // ✅ NEW FILE
+      //////////////////////////////////////////////////////
+      else {
+        await openChat(res.data.chatSessionId);
+        toast.success("Upload complete 🚀");
+      }
+
+      //////////////////////////////////////////////////////
+      // 📄 FILE TAG UI UPDATE
+      //////////////////////////////////////////////////////
+      setChatFiles((prev) =>
+        prev.includes(file.name) ? prev : [...prev, file.name]
+      );
     }
-  };
+
+    loadChats();
+  } catch (err: any) {
+    toast.dismiss();
+
+    if (!err.response) {
+      toast.error("Network timeout. Try smaller PDF.");
+    } else {
+      toast.error("Upload failed");
+    }
+
+    console.error(err);
+  } finally {
+    setUploading(false);
+    if (fileRef.current) fileRef.current.value = "";
+  }
+};
 
   //////////////////////////////////////////////////////
   // ASK
@@ -366,12 +398,13 @@ export default function NotesPage() {
           {/* CHAT */}
           <div className="flex-1 overflow-y-auto p-6 space-y-4">
             {messages.map((msg) => (
-              <div
-                key={msg.id}
-                className={`flex ${
-                  msg.role === "user" ? "justify-end" : "justify-start"
-                }`}
-              >
+             <div
+  id={`msg-${msg.id}`} // ✅ IMPORTANT
+  key={msg.id}
+  className={`flex ${
+    msg.role === "user" ? "justify-end" : "justify-start"
+  }`}
+>
                 <div className="bg-white p-3 rounded shadow max-w-xl">
                   <ReactMarkdown>{msg.content}</ReactMarkdown>
                 </div>

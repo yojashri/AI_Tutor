@@ -4,9 +4,94 @@ import { PrismaService } from '../prisma/prisma.service';
 import { RagService } from '../rag/rag.service';
 import * as crypto from 'crypto';
 import type { Express } from 'express';
-import { repl } from '@nestjs/core';
+import Tesseract from "tesseract.js";
+import * as fs from "fs";
+import * as path from "path";
+import * as poppler from "pdf-poppler";
+import { parseOffice } from "officeparser";
 
 const pdfParse = (...args: any[]) => require('pdf-parse')(...args);
+
+//////////////////////////////////////////////////////
+// 🔥 OCR FUNCTION (FAST + FULL SUPPORT)
+//////////////////////////////////////////////////////
+
+async function runOCR(
+  buffer: Buffer,
+  maxPages: number | null = 3
+): Promise<string> {
+
+  const tempDir = path.join(process.cwd(), "uploads/temp");
+
+  if (!fs.existsSync(tempDir)) {
+    fs.mkdirSync(tempDir, { recursive: true });
+  }
+
+  const timestamp = Date.now();
+
+  const pdfPath = path.join(tempDir, `temp_${timestamp}.pdf`);
+  fs.writeFileSync(pdfPath, buffer);
+
+  const options = {
+    format: "png",
+    out_dir: tempDir,
+    out_prefix: `output_${timestamp}`,
+    page: maxPages, // null = all pages
+  };
+
+  await poppler.convert(pdfPath, options);
+
+  const files = fs.readdirSync(tempDir)
+    .filter(f => f.startsWith(`output_${timestamp}`) && f.endsWith(".png"));
+
+  let text = "";
+
+  for (const file of files) {
+    const filePath = path.join(tempDir, file);
+
+    try {
+      const result = await Tesseract.recognize(filePath, "eng");
+      text += result.data.text + "\n";
+    } catch (err) {
+      console.error("OCR failed:", err);
+    }
+
+    // delete image
+    fs.unlinkSync(filePath);
+  }
+
+  // delete temp PDF
+  fs.unlinkSync(pdfPath);
+
+  return text;
+}
+
+//////////////////////////////////////////////////////
+// 🔥 BACKGROUND OCR
+//////////////////////////////////////////////////////
+
+async function processFullDocumentInBackground(
+  buffer: Buffer,
+  versionId: number,
+  storeChunks: (text: string, versionId: number) => Promise<void>
+) {
+  try {
+    console.log("🔥 Background OCR started...");
+
+    const fullText = await runOCR(buffer, null); // all pages
+
+    await storeChunks(fullText, versionId);
+
+    console.log("✅ Background OCR completed");
+
+  } catch (err) {
+    console.error("❌ Background OCR failed:", err);
+  }
+}
+
+//////////////////////////////////////////////////////
+// 📦 RESPONSE TYPE
+//////////////////////////////////////////////////////
 
 type ProcessFileResult = {
   message: string;
@@ -16,9 +101,11 @@ type ProcessFileResult = {
   reused: boolean;
   updated: boolean;
   replaced: boolean;
-  uploadedAt?: Date;
-  fileName?: string;
 };
+
+//////////////////////////////////////////////////////
+// 🚀 SERVICE
+//////////////////////////////////////////////////////
 
 @Injectable()
 export class DocumentService {
@@ -33,88 +120,88 @@ export class DocumentService {
   async processFile(
     file: Express.Multer.File,
     userId: number,
-    replace=false
+    replace = false
   ): Promise<ProcessFileResult> {
+
     if (!file) throw new BadRequestException('No file uploaded');
 
-    ////////////////////////////////////////////
+    const allowedTypes = [
+      "application/pdf",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      "text/plain",
+       "application/vnd.openxmlformats-officedocument.presentationml.presentation", // pptx
+  "application/vnd.ms-powerpoint", // ppt
+    ];
+
+    if (!allowedTypes.includes(file.mimetype)) {
+      throw new BadRequestException("Only PDF, DOCX, TXT allowed");
+    }
+
+    //////////////////////////////////////////////////////
     // 🔥 HASH
-    ////////////////////////////////////////////
+    //////////////////////////////////////////////////////
     const hash = crypto
-      .createHash('md5')
+      .createHash('sha256')
       .update(file.buffer)
       .digest('hex');
 
-    ////////////////////////////////////////////
-    // 🧠 CHECK DUPLICATE
-    ////////////////////////////////////////////
+    //////////////////////////////////////////////////////
+    // 🧠 DUPLICATE CHECK
+    //////////////////////////////////////////////////////
     const existingVersion = await this.prisma.documentVersion.findFirst({
-  where: {
-    hash,
-    document: {
-      userId,
-    },
-  },
-  include: {
-    document: {
+      where: {
+        hash,
+        document: { userId },
+      },
       include: {
-        chats: {
-          orderBy: { createdAt: "desc" },
-          take: 1,
+        document: {
+          include: {
+            chats: {
+              orderBy: { createdAt: "desc" },
+              take: 1,
+            },
+          },
         },
       },
-    },
-  },
-});
- if (existingVersion && !replace) {
-  const existingChat = existingVersion.document.chats[0];
+    });
 
-  return {
-    message: '⚠️ File already exists',
-    documentId: existingVersion.documentId,
-    versionId: existingVersion.id,
-    chatSessionId: existingChat?.id || null,
+    if (existingVersion && !replace) {
+      const existingChat = existingVersion.document.chats[0];
 
-    reused: true,
-    updated: false,
-    replaced: false,
-
-    uploadedAt: existingVersion.createdAt,
-    fileName: existingVersion.document.name,
-  };
-}
-
-    ////////////////////////////////////////////
-    // 🔁 REUSE EXISTING FILE
-    ////////////////////////////////////////////
-  if (existingVersion && replace) {
-  await this.prisma.chunk.deleteMany({
-    where: {
-      version: {
+      return {
+        message: '⚠️ File already exists',
         documentId: existingVersion.documentId,
-      },
-    },
-  });
-
-  await this.prisma.documentVersion.deleteMany({
-    where: {
-      documentId: existingVersion.documentId,
-    },
-  });
-}
-
-    ////////////////////////////////////////////
-    // 📄 PARSE FILE
-    ////////////////////////////////////////////
-    const text = await this.parseFile(file);
-
-    if (!text || text.trim().length < 20) {
-      throw new BadRequestException('Invalid document');
+        versionId: existingVersion.id,
+        chatSessionId: existingChat?.id || null,
+        reused: true,
+        updated: false,
+        replaced: false,
+      };
     }
 
-    ////////////////////////////////////////////
+    //////////////////////////////////////////////////////
+    // 🔁 REPLACE
+    //////////////////////////////////////////////////////
+    if (existingVersion && replace) {
+      const docId = existingVersion.documentId;
+
+      await this.prisma.chunk.deleteMany({
+        where: { version: { documentId: docId } },
+      });
+
+      await this.prisma.documentVersion.deleteMany({
+        where: { documentId: docId },
+      });
+    }
+
+    //////////////////////////////////////////////////////
+    // 📄 PARSE FILE
+    //////////////////////////////////////////////////////
+    const text = await this.parseFile(file);
+
+    //////////////////////////////////////////////////////
     // 🔍 FIND DOCUMENT
-    ////////////////////////////////////////////
+    //////////////////////////////////////////////////////
     let document: any = await this.prisma.document.findFirst({
       where: { userId, name: file.originalname },
       include: {
@@ -123,7 +210,7 @@ export class DocumentService {
     });
 
     //////////////////////////////////////////////////////
-    // 🆕 CREATE NEW DOCUMENT
+    // 🆕 CREATE DOCUMENT
     //////////////////////////////////////////////////////
     if (!document) {
       document = await this.prisma.document.create({
@@ -133,7 +220,7 @@ export class DocumentService {
           fileSize: file.size,
           userId,
         },
-      });
+      }) as any;
 
       const version = await this.prisma.documentVersion.create({
         data: {
@@ -145,10 +232,19 @@ export class DocumentService {
 
       await this.storeChunks(text, version.id);
 
+      // 🔥 background processing
+      setTimeout(() => {
+        processFullDocumentInBackground(
+          file.buffer,
+          version.id,
+          this.storeChunks.bind(this)
+        );
+      }, 0);
+
       const chat = await this.prisma.chatSession.create({
         data: {
           documentId: document.id,
-          versionId: version.id, // 🔥 IMPORTANT
+          versionId: version.id,
           userId,
         },
       });
@@ -165,7 +261,7 @@ export class DocumentService {
     }
 
     //////////////////////////////////////////////////////
-    // 🔄 CREATE NEW VERSION
+    // 🔄 NEW VERSION
     //////////////////////////////////////////////////////
     const oldVersion = document.versions?.[0];
 
@@ -179,10 +275,19 @@ export class DocumentService {
 
     await this.storeChunks(text, version.id);
 
+    // 🔥 background processing
+    setTimeout(() => {
+      processFullDocumentInBackground(
+        file.buffer,
+        version.id,
+        this.storeChunks.bind(this)
+      );
+    }, 0);
+
     const chat = await this.prisma.chatSession.create({
       data: {
         documentId: document.id,
-        versionId: version.id, // 🔥 IMPORTANT
+        versionId: version.id,
         userId,
       },
     });
@@ -199,22 +304,96 @@ export class DocumentService {
   }
 
   //////////////////////////////////////////////////////
-  // 📄 FILE PARSER
+  // 📄 PARSER
   //////////////////////////////////////////////////////
   async parseFile(file: Express.Multer.File): Promise<string> {
-    if (file.mimetype === 'application/pdf') {
+
+    if (file.mimetype === "application/pdf") {
       const data = await pdfParse(file.buffer);
-      return data.text;
+      let text = data.text;
+
+      if (!text || text.replace(/\s/g, "").length < 50) {
+        console.log("📸 Scanned PDF → OCR (FAST)");
+
+        const ocrText = await runOCR(file.buffer, 3);
+
+        text = (text || "") + "\n" + ocrText;
+      }
+
+      return text;
     }
 
-    if (file.mimetype.includes('word')) {
+    if (file.mimetype.includes("word")) {
       const result = await mammoth.extractRawText({
         buffer: file.buffer,
       });
       return result.value;
     }
 
-    throw new BadRequestException('Unsupported file');
+    if (file.mimetype === "text/plain") {
+      return file.buffer.toString("utf-8");
+    }
+
+    //////////////////////////////////////////////////////
+// 📊 PPT / PPTX
+//////////////////////////////////////////////////////
+//////////////////////////////////////////////////////
+// 📊 PPT / PPTX
+//////////////////////////////////////////////////////
+//////////////////////////////////////////////////////
+// 📊 PPT / PPTX
+//////////////////////////////////////////////////////
+if (
+  file.mimetype.includes("presentation") ||
+  file.originalname.endsWith(".pptx") ||
+  file.originalname.endsWith(".ppt")
+) {
+  try {
+    const text = await new Promise<string>((resolve, reject) => {
+      parseOffice(file.buffer, (ast: any, err: any) => {
+        if (err) return reject(err);
+
+        try {
+          // 🔥 Extract text from AST
+          let extractedText = "";
+
+          const traverse = (node: any) => {
+            if (!node) return;
+
+            if (typeof node === "string") {
+              extractedText += node + " ";
+            }
+
+            if (Array.isArray(node)) {
+              node.forEach(traverse);
+            }
+
+            if (typeof node === "object") {
+              Object.values(node).forEach(traverse);
+            }
+          };
+
+          traverse(ast);
+
+          resolve(extractedText);
+        } catch (e) {
+          reject(e);
+        }
+      });
+    });
+
+    if (!text || text.trim().length < 10) {
+      throw new Error("Empty PPT");
+    }
+
+    return text;
+
+  } catch (err) {
+    console.error("PPT parsing failed:", err);
+    throw new BadRequestException("Failed to read PPT file");
+  }
+}
+    throw new BadRequestException("Unsupported file");
   }
 
   //////////////////////////////////////////////////////
