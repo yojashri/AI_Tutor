@@ -12,9 +12,9 @@ import { parseOffice } from "officeparser";
 
 const pdfParse = (...args: any[]) => require('pdf-parse')(...args);
 
-//////////////////////////////////////////////////////
+
 // 🔥 OCR FUNCTION (FAST + FULL SUPPORT)
-//////////////////////////////////////////////////////
+
 
 async function runOCR(
   buffer: Buffer,
@@ -66,9 +66,9 @@ async function runOCR(
   return text;
 }
 
-//////////////////////////////////////////////////////
+
 // 🔥 BACKGROUND OCR
-//////////////////////////////////////////////////////
+
 
 async function processFullDocumentInBackground(
   buffer: Buffer,
@@ -89,9 +89,9 @@ async function processFullDocumentInBackground(
   }
 }
 
-//////////////////////////////////////////////////////
+
 // 📦 RESPONSE TYPE
-//////////////////////////////////////////////////////
+
 
 type ProcessFileResult = {
   message: string;
@@ -103,9 +103,9 @@ type ProcessFileResult = {
   replaced: boolean;
 };
 
-//////////////////////////////////////////////////////
+
 // 🚀 SERVICE
-//////////////////////////////////////////////////////
+
 
 @Injectable()
 export class DocumentService {
@@ -114,9 +114,9 @@ export class DocumentService {
     private ragService: RagService
   ) {}
 
-  //////////////////////////////////////////////////////
+  
   // 🚀 MAIN FUNCTION
-  //////////////////////////////////////////////////////
+  
   async processFile(
     file: Express.Multer.File,
     userId: number,
@@ -137,17 +137,13 @@ export class DocumentService {
       throw new BadRequestException("Only PDF, DOCX, TXT allowed");
     }
 
-    //////////////////////////////////////////////////////
     // 🔥 HASH
-    //////////////////////////////////////////////////////
     const hash = crypto
       .createHash('sha256')
       .update(file.buffer)
       .digest('hex');
 
-    //////////////////////////////////////////////////////
     // 🧠 DUPLICATE CHECK
-    //////////////////////////////////////////////////////
     const existingVersion = await this.prisma.documentVersion.findFirst({
       where: {
         hash,
@@ -179,9 +175,7 @@ export class DocumentService {
       };
     }
 
-    //////////////////////////////////////////////////////
     // 🔁 REPLACE
-    //////////////////////////////////////////////////////
     if (existingVersion && replace) {
       const docId = existingVersion.documentId;
 
@@ -194,14 +188,10 @@ export class DocumentService {
       });
     }
 
-    //////////////////////////////////////////////////////
     // 📄 PARSE FILE
-    //////////////////////////////////////////////////////
     const text = await this.parseFile(file);
 
-    //////////////////////////////////////////////////////
     // 🔍 FIND DOCUMENT
-    //////////////////////////////////////////////////////
     let document: any = await this.prisma.document.findFirst({
       where: { userId, name: file.originalname },
       include: {
@@ -209,9 +199,7 @@ export class DocumentService {
       },
     });
 
-    //////////////////////////////////////////////////////
     // 🆕 CREATE DOCUMENT
-    //////////////////////////////////////////////////////
     if (!document) {
       document = await this.prisma.document.create({
         data: {
@@ -260,9 +248,7 @@ export class DocumentService {
       };
     }
 
-    //////////////////////////////////////////////////////
     // 🔄 NEW VERSION
-    //////////////////////////////////////////////////////
     const oldVersion = document.versions?.[0];
 
     const version = await this.prisma.documentVersion.create({
@@ -303,9 +289,9 @@ export class DocumentService {
     };
   }
 
-  //////////////////////////////////////////////////////
-  // 📄 PARSER
-  //////////////////////////////////////////////////////
+  
+  //  PARSER
+  
   async parseFile(file: Express.Multer.File): Promise<string> {
 
     if (file.mimetype === "application/pdf") {
@@ -334,15 +320,11 @@ export class DocumentService {
       return file.buffer.toString("utf-8");
     }
 
-    //////////////////////////////////////////////////////
-// 📊 PPT / PPTX
-//////////////////////////////////////////////////////
-//////////////////////////////////////////////////////
-// 📊 PPT / PPTX
-//////////////////////////////////////////////////////
-//////////////////////////////////////////////////////
-// 📊 PPT / PPTX
-//////////////////////////////////////////////////////
+
+
+
+// PPT / PPTX
+
 if (
   file.mimetype.includes("presentation") ||
   file.originalname.endsWith(".pptx") ||
@@ -396,9 +378,9 @@ if (
     throw new BadRequestException("Unsupported file");
   }
 
-  //////////////////////////////////////////////////////
+  
   // ✂️ CHUNKING
-  //////////////////////////////////////////////////////
+  
   chunkText(text: string): string[] {
     return text
       .split(/\n\s*\n/)
@@ -407,9 +389,9 @@ if (
       .slice(0, 200);
   }
 
-  //////////////////////////////////////////////////////
+  
   // 🧠 STORE CHUNKS
-  //////////////////////////////////////////////////////
+  
   async storeChunks(text: string, versionId: number) {
     const chunks = this.chunkText(text);
 
@@ -428,9 +410,9 @@ if (
     }
   }
 
-  //////////////////////////////////////////////////////
+  
   // 📂 SIDEBAR
-  //////////////////////////////////////////////////////
+  
   async getUserDocuments(userId: number) {
     return this.prisma.document.findMany({
       where: { userId },

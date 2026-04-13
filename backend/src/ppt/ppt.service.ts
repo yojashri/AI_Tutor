@@ -103,20 +103,7 @@ export class PptService {
 
     let slides = data.slides || [];
 
-    // // 🔥 FORCE LAST SLIDE = CONCLUSION (NO EXTRA SLIDE)
-    // if (slides.length > 0) {
-    //   slides[slides.length - 1] = {
-    //     heading: "Conclusion",
-    //     points: [
-    //       `${data.title} provides structured understanding of system behavior`,
-    //       `${data.title} improves efficiency and scalability in real-world systems`,
-    //       `${data.title} helps design optimized and reliable architectures`,
-    //       `${data.title} is widely used across multiple domains`,
-    //       `${data.title} forms a foundation for advanced concepts`
-    //     ],
-    //     diagramCode: ""
-    //   };
-    // }
+    
 
     // ===== LOOP =====
     for (let idx = 0; idx < slides.length && slideCount < totalSlides; idx++) {

@@ -1,259 +1,228 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, BadRequestException } from '@nestjs/common';
 import axios from 'axios';
 import { PptService } from '../ppt/ppt.service';
+
+type Slide = {
+  heading: string;
+  points: string[];
+  diagramCode: string;
+};
+
+type Evaluation = {
+  score: number;
+  feedback: string;
+};
 
 @Injectable()
 export class TutorService {
   constructor(private pptService: PptService) {}
 
-  // ================= SLIDE PLAN =================
- getSlidePlan(slides: number): string[] {
+  //////////////////////////////////////////////////////
+  // SAFE JSON PARSER
+  //////////////////////////////////////////////////////
+  safeJsonParse(content: string) {
+    try {
+      const clean = content
+        .replace(/```json/g, '')
+        .replace(/```/g, '')
+        .trim();
 
-  // ❗ reserve last slide for Conclusion
-  const contentSlides = slides - 1;
+      const match = clean.match(/\{[\s\S]*\}/);
+      if (!match) return null;
 
-  const base = [
-    "Introduction",
-    "Definition",
-    "Core Concept",
-    "Working Principle",
-    "Algorithm",
-    "Example",
-    "Advantages",
-    "Limitations",
-    "Applications"
-  ];
-
-  const extraTopics = [
-    "Performance Analysis",
-    "Optimization Techniques",
-    "Real-World Use Case",
-    "System Design Insight",
-    "Comparative Analysis"
-  ];
-
-  let plan = [...base];
-  let i = 0;
-
-  while (plan.length < contentSlides) {
-    plan.push(extraTopics[i % extraTopics.length]);
-    i++;
-  }
-
-  plan = plan.slice(0, contentSlides);
-
-  return plan;
-}
-  // ================= SAFE JSON =================
- safeJsonParse(content: string) {
-  try {
-    if (!content) return null;
-
-    let clean = content
-      .replace(/```json/g, '')
-      .replace(/```/g, '')
-      .trim();
-
-    const start = clean.indexOf('{');
-    const end = clean.lastIndexOf('}');
-
-    if (start === -1 || end === -1) return null;
-
-    clean = clean.substring(start, end + 1);
-
-    return JSON.parse(clean);
-
-  } catch (err) {
-    console.log("❌ JSON parse failed");
-    return null;
-  }
-}
-
-  // ================= REGENERATE SINGLE SLIDE =================
-  async regenerateSlide(topic: string, heading: string) {
-
-    const prompt = `
-Generate content for ONE PPT slide.
-
-Topic: ${topic}
-Slide Title: ${heading}
-
-
-=====================================
-
-STRUCTURE (MANDATORY):
-
-- First slide: Title
-- Last slide: Conclusion (MANDATORY)
-
-Core slides must include:
-
-1. Introduction
-2. Definition
-3. Core Concept (ONLY ONE SLIDE)
-4. Working Principle (WITH DIAGRAM)
-5. Algorithm OR Example
-6. Applications (ONLY ONE SLIDE)
-7. Conclusion
-
--------------------------------------
-
-ADAPTIVE RULE:
-
-- If slides are less:
-  → Merge sections (Algorithm + Example)
-  → Remove Mathematical Insight if not relevant
-
-- DO NOT include Mathematical Insight unless topic contains formulas
-- DO NOT split Core Concept into multiple slides
-- ONLY split if topic explicitly contains multiple subtopics
-
-=====================================
-
-BULLET RULE:
-
-- No visual → EXACTLY 5 bullets
-- With visual → EXACTLY 3 bullets
-- Algorithm → full steps allowed
-
--------------------------------------
-
-CONTENT RULES (VERY STRICT):
-
-FOR ALL SLIDES (EXCEPT APPLICATIONS):
-
-- Each bullet MUST be a COMPLETE SENTENCE
-- Each bullet MUST contain 12–20 words
-- Each bullet MUST explain WHY or HOW
-- Each bullet MUST include technical reasoning or system behavior
-
-✔ GOOD:
-"Entity Relationship Model organizes data into entities and relationships to reduce redundancy in database design"
-
-❌ BAD:
-"Foundation of DBMS"
-"Visual representation"
-"Important concept"
-
--------------------------------------
-
-APPLICATION RULE (SPECIAL CASE):
-
-- ONLY for Applications slide:
-  → Use SHORT KEYWORDS (1–4 words)
-  → NO sentences
-
-✔ Example:
-- Database Design
-- Schema Modeling
-- Data Warehousing
-- Query Optimization
-- Knowledge Systems
-
--------------------------------------
-
-VISUAL RULE:
-
-- Core Concept → IMAGE
-- Working Principle → DIAGRAM (Mermaid ONLY)
-- Applications → IMAGE
-- Algorithm → NO diagram
-
--------------------------------------
-
-DIAGRAM RULE (STRICT):
-
-- MUST return valid Mermaid code
-- MUST start with "graph TD"
-- MUST represent the actual system flow (NOT generic flowchart)
-
--------------------------------------
-
-QUALITY CONTROL:
-
-- No repetition
-- No vague wording
-- No filler text
-- Maintain academic tone
-
-=====================================
-
-OUTPUT STRICT JSON:
-
-{
-  "title": "",
-  "slides": [
-    {
-      "heading": "",
-      "points": [],
-      "diagramCode": "",
-      "formula": ""
+      return JSON.parse(match[0]);
+    } catch {
+      return null;
     }
-  ]
-}
-`;
+  }
 
+  //////////////////////////////////////////////////////
+  // AI CALL (NO FALLBACK MODEL)
+  //////////////////////////////////////////////////////
+  async callAI(prompt: string) {
     try {
       const res = await axios.post(
         "https://openrouter.ai/api/v1/chat/completions",
         {
-           model: "meta-llama/llama-3-8b-instruct",
+          model: "meta-llama/llama-3-8b-instruct",
           messages: [{ role: "user", content: prompt }],
-          temperature: 0.7
         },
         {
           headers: {
-            Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`
+            Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
           },
-          timeout: 60000 // 🔥 IMPORTANT
-
         }
       );
 
-      const parsed = this.safeJsonParse(
-        res.data.choices[0].message.content
-      );
-if (parsed && Array.isArray(parsed.slides)) {
-  const slide = parsed.slides[0];
+      const output = res.data?.choices?.[0]?.message?.content;
 
-  if (slide?.points?.length >= 3) {
-    return slide.points.slice(0, 5);
-  }
-}
+      if (!output) {
+        throw new Error("Empty AI response");
+      }
 
-    } catch (err) {
-      console.log("⚠️ Regeneration failed:", heading);
+      return output;
+
+    } catch (err: any) {
+      console.error("AI call failed:", err.message);
+      throw new BadRequestException("AI generation failed");
     }
-
-    // 🔥 fallback (never empty)
-    return [
-      `${topic} ${heading} affects system performance in real-world scenarios`,
-      `${topic} ${heading} involves multiple components interacting within the system`,
-      `${topic} ${heading} improves efficiency and scalability across environments`,
-      `${topic} ${heading} contributes to optimized resource utilization`,
-      `${topic} ${heading} plays a key role in system design and implementation`
-    ];
   }
 
-  // ================= MAIN =================
-async generateContent(course: string, topic: string, slides: number) {
+  //////////////////////////////////////////////////////
+  // MERMAID DIAGRAM
+  //////////////////////////////////////////////////////
+  generateDynamicDiagram(topic: string, heading: string) {
+    return `graph TD
+UserInput[User Input] --> Process[${heading}]
+Process --> Engine[${topic} Engine]
+Engine --> Validation{Valid Data?}
+Validation -->|Yes| Transform[Process Data]
+Validation -->|No| Error[Handle Error]
+Transform --> Output[Final Output]
+Error --> Output`;
+  }
 
-  const slidePlan = this.getSlidePlan(slides);
+  //////////////////////////////////////////////////////
+  // GENERATE CONTENT (SMART + STABLE)
+  //////////////////////////////////////////////////////
+  async generateContent(course: string, topic: string, slides: number) {
 
-  const prompt = `
-Generate EXACTLY ${slides} PPT slides on "${topic}"
+const prompt = `
+You are a HIGHLY STRICT academic PPT generator designed for university-level content.
 
-Rules:
-- Each slide must have heading + EXACTLY 5 bullet points
-- Working Principle MUST include Mermaid diagram (graph TD)
-- Last slide MUST be Conclusion
-- DO NOT return fewer slides
-- DO NOT return extra slides
-- Return ONLY valid JSON (no text, no explanation)
+Generate EXACTLY ${slides} slides.
 
-Format:
+Topic: "${topic}"
+Course: "${course}"
+
+========================================
+🚨 HARD CONSTRAINTS (ABSOLUTE)
+========================================
+
+- You MUST generate EXACTLY ${slides} slides
+- DO NOT exceed or reduce slide count
+- DO NOT skip any rule
+
+========================================
+📌 STRUCTURE (MANDATORY)
+========================================
+
+Slide 1 → Introduction  
+Slide 2 → Definition  
+Slide ${slides} → Conclusion (ALWAYS LAST)
+
+Middle slides:
+- MUST be intelligently generated based on topic
+- MUST NOT repeat content
+- MUST maintain logical progression
+
+========================================
+🧠 CONTENT DISTRIBUTION (STRICT)
+========================================
+
+Slides MUST include (at least once):
+
+- Core Concept (ONLY ONE slide)
+- Working Principle (MANDATORY)
+- Algorithm OR Example
+- Applications (ONLY ONE slide)
+
+Additional slides should expand:
+
+- Performance Analysis
+- Optimization
+- Real-world Use Cases
+- Comparison
+- System Design
+
+⚠️ Adapt dynamically:
+- Fewer slides → merge concepts
+- More slides → deepen explanation (NO repetition)
+
+========================================
+📊 CONTENT RULES (VERY STRICT)
+========================================
+
+FOR ALL SLIDES (except Applications):
+
+- EXACTLY 5 bullet points
+- Each bullet MUST:
+  ✔ Be 12–20 words
+  ✔ Be a COMPLETE sentence
+  ✔ Explain HOW and WHY
+  ✔ Include system-level or internal working explanation
+  ✔ Be technically meaningful (engineering-level)
+
+❌ STRICTLY FORBIDDEN:
+- Generic phrases
+- Repetition
+- Surface-level explanations
+- Filler content
+
+========================================
+📌 APPLICATION SLIDE (SPECIAL)
+========================================
+
+- ONLY short keywords (1–4 words)
+- NO sentences
+
+Example:
+- Data Processing
+- Load Balancing
+- Query Optimization
+
+========================================
+📊 DIAGRAM RULES (CRITICAL)
+========================================
+
+Working Principle:
+- MUST include Mermaid diagram
+- MUST represent REAL system flow
+
+Algorithm / Example:
+- MUST include Mermaid IF applicable
+
+Core Concept:
+- NO diagram
+
+Applications:
+- NO diagram
+
+========================================
+⚠️ MERMAID STRICT RULES
+========================================
+
+- MUST start with: graph TD
+- MUST include meaningful system nodes
+- MUST include branching or logic flow when applicable
+- MUST NOT be generic (A → B → C)
+
+Example:
+graph TD
+Input --> Processing
+Processing --> Decision{Condition}
+Decision --> Output1
+Decision --> Output2
+
+========================================
+🚫 QUALITY CONTROL
+========================================
+
+- NO duplicate points
+- NO duplicate slides
+- Each slide must be UNIQUE
+- Maintain academic tone
+- Maintain logical flow
+- Avoid redundancy across slides
+
+========================================
+📦 OUTPUT FORMAT (STRICT JSON ONLY)
+========================================
+
+Return ONLY valid JSON:
+
 {
-  "title": "",
+  "title": "${topic}",
   "slides": [
     {
       "heading": "",
@@ -262,273 +231,177 @@ Format:
     }
   ]
 }
+
+RULES:
+- No explanations
+- No markdown
+- No extra text
+- Valid JSON only
 `;
 
-  let parsed;
+    //////////////////////////////////////////////////////
+    // RETRY LOGIC (MAX 2 TIMES)
+    //////////////////////////////////////////////////////
+    let parsed: any = null;
 
-  try {
-    const response = await axios.post(
-      "https://openrouter.ai/api/v1/chat/completions",
-      {
-        model: "meta-llama/llama-3-8b-instruct",
-        messages: [{ role: "user", content: prompt }],
-        temperature: 0.2
-      },
-      {
-        headers: {
-          Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
-        },
-        timeout: 120000
-      }
-    );
+    for (let i = 0; i < 2; i++) {
+      const raw = await this.callAI(prompt);
+      parsed = this.safeJsonParse(raw);
 
-    console.log("🧠 RAW AI OUTPUT:", response.data.choices[0].message.content);
+      if (parsed && parsed.slides) break;
 
-    parsed = this.safeJsonParse(
-      response.data.choices[0].message.content
-    );
-
-  } catch (err) {
-    console.log("❌ AI FAILED → using full fallback");
-    parsed = null;
-  }
-
-  let aiSlides = parsed?.slides || [];
-
-  // ✅ FORCE LENGTH (VERY IMPORTANT)
-  while (aiSlides.length < slides) {
-    aiSlides.push(null);
-  }
-
- const finalSlides: {
-  heading: string;
-  points: string[];
-  diagramCode: string;
-}[] = [];
-
-for (let i = 0; i < slidePlan.length; i++) {
-  const heading = slidePlan[i];
-  const aiSlide = aiSlides[i];
-
-  let points = aiSlide?.points || [];
-
-  points = [...new Set(points)];
-
-  if (!aiSlide || !points || points.length < 3) {
-    console.log("⚠️ Using fallback:", heading);
-
-    points = [
-      `${heading} explains the concept of ${topic}`,
-      `${heading} improves system efficiency and performance`,
-      `${heading} is widely used in real-world applications`,
-      `${heading} helps in designing optimized systems`,
-      `${heading} plays an important role in ${topic}`
-    ];
-  }
-
-  finalSlides.push({
-    heading,
-    points: points.slice(0, 5),
-    diagramCode: aiSlide?.diagramCode || ""
-  });
-}
-
-  console.log("FINAL SLIDES:", finalSlides.length);
-
-  return {
-    title: parsed?.title || topic,
-    slides: finalSlides.slice(0, slides),
-  };
-}
-async generateQuiz(topic: string, slides: any[]) {
-
-  const prompt = `
-Generate 5 multiple choice questions from the topic and slides.
-
-Topic: ${topic}
-
-Rules:
-- 5 questions
-- Each has 4 options
-- Only 1 correct answer
-- Questions must be concept-based
-Return ONLY JSON.
-Do NOT include any text before or after JSON.
-Return JSON:
-{
-  "questions": [
-    {
-      "question": "",
-      "options": ["", "", "", ""],
-      "answer": ""
-    }
-  ]
-}
-`;
-
-  try {
-    const res = await axios.post(
-      "https://openrouter.ai/api/v1/chat/completions",
-      {
-          model: "meta-llama/llama-3-8b-instruct",
-        messages: [{ role: "user", content: prompt }],
-        temperature: 0.5
-      },
-      {
-        headers: {
-          Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`
-        },
-        timeout: 60000 // 🔥 IMPORTANT
-      }
-    );
-
-    const parsed = this.safeJsonParse(
-      res.data.choices[0].message.content
-    );
-
-    return parsed || { questions: [] };
-
-  } catch (err) {
-    return { questions: [] };
-  }
-}
-async explainSlide(topic: string, heading: string, points: string[]) {
-
-  const prompt = `
-Explain this slide in simple terms.
-
-Topic: ${topic}
-Slide: ${heading}
-
-Content:
-${points.join("\n")}
-
-Rules:
-- Simple explanation
-- Real-world analogy if possible
-- 5-6 lines
-
-Return JSON:
-{
-  "explanation": ""
-}
-`;
-
-  try {
-    const res = await axios.post(
-      "https://openrouter.ai/api/v1/chat/completions",
-      {
-          model: "meta-llama/llama-3-8b-instruct",
-        messages: [{ role: "user", content: prompt }],
-        temperature: 0.6
-      },
-      {
-        headers: {
-          Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`
-        },
-        timeout: 60000 // 🔥 IMPORTANT
-      }
-    );
-
-    const parsed = this.safeJsonParse(
-      res.data.choices[0].message.content
-    );
-
-    return parsed || { explanation: "" };
-
-  } catch {
-    return { explanation: "" };
-  }
-}
-evaluateSlides(slides: any[]) {
-
-  let score = 0;
-
-  let clarity = 0;
-  let depth = 0;
-  let structure = 0;
-  let visuals = 0;
-
-  slides.forEach(slide => {
-
-    const points = slide.points || [];
-
-    // Structure
-    if (points.length === 5) structure += 1;
-
-    // Clarity
-    if (points.every(p => p.length > 20)) clarity += 1;
-
-    // Depth
-    if (points.some(p => p.includes("because") || p.includes("improves"))) {
-      depth += 1;
+      console.log("Retrying AI generation...");
     }
 
-    // Visuals
-    if (slide.diagramCode) visuals += 1;
+    if (!parsed || !parsed.slides) {
+      throw new BadRequestException("AI failed to generate valid slides");
+    }
 
-  });
+    let aiSlides: Slide[] = parsed.slides;
 
-  score = clarity + depth + structure + visuals;
+    //////////////////////////////////////////////////////
+    // TRIM EXTRA SLIDES
+    //////////////////////////////////////////////////////
+    if (aiSlides.length > slides) {
+      aiSlides = aiSlides.slice(0, slides);
+    }
 
-  return {
-    score: Math.min(score * 2, 40),
-    breakdown: {
-      clarity,
-      depth,
-      structure,
-      visuals
-    },
-    improvements: [
-      "Add more real-world examples",
-      "Increase explanation depth",
-      "Use diagrams where possible"
-    ]
-  };
-}
-async chat({ course, question }: any) {
-  const prompt = `
-You are an AI Tutor for ${course}.
+    //////////////////////////////////////////////////////
+    // BUILD FINAL SLIDES (NO FAKE DATA)
+    //////////////////////////////////////////////////////
+    const finalSlides: Slide[] = [];
 
-Answer the question clearly and concisely:
-${question}
-`;
+    for (let i = 0; i < slides; i++) {
 
-  try {
-    const res = await axios.post(
-      "https://openrouter.ai/api/v1/chat/completions",
-      {
-      model: "meta-llama/llama-3-8b-instruct",
-        messages: [{ role: "user", content: prompt }],
-        temperature: 0.7
-      },
-      {
-        headers: {
-          Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`
-        },
-        timeout: 60000 // 🔥 IMPORTANT
+      let slide = aiSlides[i];
+
+      // fallback to nearest valid AI slide (NOT generic)
+      if (!slide) {
+        slide = aiSlides[i - 1] || aiSlides[0];
       }
-    );
 
-    const response = res.data.choices[0].message.content;
+      //////////////////////////////////////////////////////
+      // HEADING FIX
+      //////////////////////////////////////////////////////
+      let heading = slide.heading;
+
+      if (!heading || heading.toLowerCase().includes("concept")) {
+        heading = `Topic Insight ${i + 1}`;
+      }
+
+      //////////////////////////////////////////////////////
+      // POINT FIX (NO GENERIC CONTENT)
+      //////////////////////////////////////////////////////
+      let points = slide.points || [];
+
+      if (points.length < 5) {
+        while (points.length < 5) {
+          points.push(points[points.length - 1] || "Explanation unavailable");
+        }
+      }
+
+      //////////////////////////////////////////////////////
+      // FORCE STRUCTURE
+      //////////////////////////////////////////////////////
+      if (i === 0) heading = "Introduction";
+      if (i === 1) heading = "Definition";
+      if (i === slides - 1) heading = "Conclusion";
+
+      //////////////////////////////////////////////////////
+      // DIAGRAM FIX
+      //////////////////////////////////////////////////////
+      let diagramCode = slide.diagramCode || "";
+
+      if (
+        heading.toLowerCase().includes("working") ||
+        heading.toLowerCase().includes("algorithm")
+      ) {
+        if (!diagramCode.includes("graph TD")) {
+          diagramCode = this.generateDynamicDiagram(topic, heading);
+        }
+      }
+
+      finalSlides.push({
+        heading,
+        points: points.slice(0, 5),
+        diagramCode
+      });
+    }
 
     return {
-      content: response,
-    };
-  } catch (err) {
-    return {
-      content: "I could not generate a response. Please try again.",
+      title: topic,
+      slides: finalSlides
     };
   }
+
+  //////////////////////////////////////////////////////
+  // EVALUATION
+  //////////////////////////////////////////////////////
+  async evaluateSlides(slides: Slide[]) {
+    const results: Evaluation[] = [];
+
+    for (const slide of slides) {
+
+      const prompt = `
+Return ONLY JSON:
+
+{
+ "score": number,
+ "feedback": "short feedback"
 }
-  // ================= PPT =================
+
+Slide:
+${JSON.stringify(slide)}
+`;
+
+      try {
+        const res = await axios.post(
+          "https://openrouter.ai/api/v1/chat/completions",
+          {
+            model: "meta-llama/llama-3-70b-instruct",
+            messages: [{ role: "user", content: prompt }],
+          },
+          {
+            headers: {
+              Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
+            },
+          }
+        );
+
+        const raw = res.data.choices[0].message.content;
+        const parsed = this.safeJsonParse(raw);
+
+        if (!parsed || !parsed.score) {
+          results.push({ score: 0, feedback: "Parsing failed" });
+        } else {
+          results.push(parsed);
+        }
+
+      } catch {
+        results.push({ score: 0, feedback: "Evaluation error" });
+      }
+    }
+
+    return results;
+  }
+
+  //////////////////////////////////////////////////////
+  // MAIN PPT
+  //////////////////////////////////////////////////////
   async generatePPT(course: string, topic: string, slides: number) {
+
     const content = await this.generateContent(course, topic, slides);
+
     const filePath = await this.pptService.createPPT(content, slides);
 
-return {
-  slides: content.slides,
-  file: filePath,
-};
+    const evaluation = await this.evaluateSlides(content.slides);
+
+    console.log("Evaluation:", evaluation);
+
+    return {
+      slides: content.slides,
+      file: filePath,
+      evaluation
+    };
   }
 }

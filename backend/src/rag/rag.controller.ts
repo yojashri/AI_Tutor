@@ -58,7 +58,7 @@ export class RagController {
         versionId ? Number(versionId) : null,      // ✅ FIX
         chatSessionId ? Number(chatSessionId) : null, // ✅ FIX
         userId,                                   // ✅ IMPORTANT
-        course
+        
       );
 
       ////////////////////////////////////////////

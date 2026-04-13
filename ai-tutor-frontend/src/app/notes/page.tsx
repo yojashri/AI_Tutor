@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, useRef, useEffect } from "react";
@@ -29,7 +30,7 @@ export default function NotesPage() {
 
   const [chats, setChats] = useState<any[]>([]);
   const [activeChat, setActiveChat] = useState<number | null>(null);
-
+const controllerRef = useRef<AbortController | null>(null);
   const [versionId, setVersionId] = useState<number | null>(null);
 
   const bottomRef = useRef<any>(null);
@@ -235,57 +236,95 @@ export default function NotesPage() {
   //////////////////////////////////////////////////////
   // ASK
   //////////////////////////////////////////////////////
-  const ask = async () => {
-    const finalCourse = course === "Other" ? customCourse : course;
+ const ask = async () => {
+  const finalCourse = course === "Other" ? customCourse : course;
 
-    if (!finalCourse && !versionId) {
-      return toast.error("Select course first");
+  if (!finalCourse && !versionId) {
+    return toast.error("Select course or upload document");
+  }
+
+  if (!question.trim() || question.length < 3) {
+    return toast.error("Enter valid topic");
+  }
+
+  const tempId = Date.now();
+  const currentQuestion = question;
+
+  //////////////////////////////////////////////////////
+  // CLEAR INPUT IMMEDIATELY
+  //////////////////////////////////////////////////////
+  setQuestion("");
+
+  //////////////////////////////////////////////////////
+  // ADD USER MESSAGE
+  //////////////////////////////////////////////////////
+  setMessages((prev) => [
+    ...prev,
+    { id: tempId, role: "user", content: currentQuestion },
+  ]);
+
+  setLoading(true);
+  controllerRef.current = new AbortController();
+
+  try {
+    const res = await askQuestion(
+      {
+        question: currentQuestion,
+
+        // ✅ ONLY send versionId if exists
+        ...(versionId ? { versionId } : {}),
+
+        chatSessionId: activeChat,
+        course: finalCourse,
+      },
+      controllerRef.current.signal
+    );
+
+    let answer = res.data.answer;
+
+    //////////////////////////////////////////////////////
+    // ✅ HANDLE DOCUMENT MODE ONLY
+    //////////////////////////////////////////////////////
+    if (
+      versionId &&
+      (
+        !answer ||
+        answer.toLowerCase().includes("not related") ||
+        answer.toLowerCase().includes("not found")
+      )
+    ) {
+      answer = "This question is not sufficiently covered in the document.";
     }
-
-    if (!question.trim() || question.length < 3) {
-      return toast.error("Enter valid topic");
-    }
-
-    const invalidWords = ["abc", "xyz", "asdf", "mmmm"];
-    if (invalidWords.includes(question.toLowerCase())) {
-      return toast.error("Invalid topic");
-    }
-
-    const tempId = Date.now();
 
     setMessages((prev) => [
       ...prev,
-      { id: tempId, role: "user", content: question },
+      {
+        id: tempId + 1,
+        role: "assistant",
+        content: answer,
+      },
     ]);
 
-    setLoading(true);
+    loadChats();
 
-    try {
-      const res = await askQuestion({
-        question,
-        versionId: versionId || undefined,
-        chatSessionId: activeChat || undefined,
-        course: finalCourse,
-      });
-
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: tempId + 1,
-          role: "assistant",
-          content: res.data.answer,
-        },
-      ]);
-
-      setQuestion("");
-      loadChats();
-    } catch {
-      toast.error("Failed");
-    } finally {
-      setLoading(false);
+  } catch (err: any) {
+    if (err.name === "CanceledError" || err.code === "ERR_CANCELED") {
+      toast("Stopped");
+    } else {
+      toast.error("Failed to generate answer");
     }
-  };
-
+  } finally {
+    setLoading(false);
+    controllerRef.current = null;
+  }
+};
+const stopGenerating = () => {
+  if (controllerRef.current) {
+    controllerRef.current.abort();
+    controllerRef.current = null;
+  }
+  setLoading(false);
+};
   //////////////////////////////////////////////////////
   // AUTO SCROLL
   //////////////////////////////////////////////////////
@@ -416,32 +455,63 @@ export default function NotesPage() {
           </div>
 
           {/* INPUT */}
-          <div className="p-4 bg-white border-t flex gap-2 items-center">
-            <input type="file" ref={fileRef} multiple />
+      {/* INPUT */}
+<div className="p-4 bg-white border-t flex gap-2 items-center">
 
-            <button
-              onClick={upload}
-              disabled={uploading}
-              className="bg-green-600 text-white px-3 py-2 rounded"
-            >
-              {uploading ? "Uploading..." : "Upload"}
-            </button>
+  {/* FILE */}
+  <input type="file" ref={fileRef} multiple />
 
-            <input
-              value={question}
-              onChange={(e) => setQuestion(e.target.value)}
-              className="flex-1 border p-2 rounded"
-              placeholder="Ask topic..."
-            />
+  {/* COURSE DROPDOWN */}
+  <select
+    value={course}
+    onChange={(e) => setCourse(e.target.value)}
+    className="border p-2 rounded"
+  >
+    <option value="">Select Course</option>
+    <option value="DBMS">DBMS</option>
+    <option value="OS">Operating Systems</option>
+    <option value="AI">Artificial Intelligence</option>
+    <option value="CN">Computer Networks</option>
+    <option value="Other">Other</option>
+  </select>
 
-            <button
-              onClick={ask}
-              disabled={loading}
-              className="bg-blue-600 text-white px-4"
-            >
-              Ask
-            </button>
-          </div>
+  {/* CUSTOM COURSE INPUT */}
+  {course === "Other" && (
+    <input
+      value={customCourse}
+      onChange={(e) => setCustomCourse(e.target.value)}
+      placeholder="Enter course"
+      className="border p-2 rounded"
+    />
+  )}
+
+  {/* UPLOAD */}
+  <button
+    onClick={upload}
+    disabled={uploading}
+    className="bg-green-600 text-white px-3 py-2 rounded"
+  >
+    {uploading ? "Uploading..." : "Upload"}
+  </button>
+
+  {/* QUESTION INPUT */}
+  <input
+    value={question}
+    onChange={(e) => setQuestion(e.target.value)}
+    className="flex-1 border p-2 rounded"
+    placeholder="Ask topic..."
+  />
+
+  {/* ASK / STOP */}
+  <button
+    onClick={loading ? stopGenerating : ask}
+    className={`px-4 text-white ${
+      loading ? "bg-red-600" : "bg-blue-600"
+    }`}
+  >
+    {loading ? "Stop" : "Ask"}
+  </button>
+</div>
         </div>
       </div>
     </div>
