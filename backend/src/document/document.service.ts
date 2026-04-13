@@ -13,7 +13,7 @@ import { parseOffice } from "officeparser";
 const pdfParse = (...args: any[]) => require('pdf-parse')(...args);
 
 
-// 🔥 OCR FUNCTION (FAST + FULL SUPPORT)
+//  OCR FUNCTION 
 
 
 async function runOCR(
@@ -67,7 +67,7 @@ async function runOCR(
 }
 
 
-// 🔥 BACKGROUND OCR
+//  BACKGROUND OCR
 
 
 async function processFullDocumentInBackground(
@@ -76,21 +76,21 @@ async function processFullDocumentInBackground(
   storeChunks: (text: string, versionId: number) => Promise<void>
 ) {
   try {
-    console.log("🔥 Background OCR started...");
+    console.log(" Background OCR started...");
 
     const fullText = await runOCR(buffer, null); // all pages
 
     await storeChunks(fullText, versionId);
 
-    console.log("✅ Background OCR completed");
+    console.log(" Background OCR completed");
 
   } catch (err) {
-    console.error("❌ Background OCR failed:", err);
+    console.error(" Background OCR failed:", err);
   }
 }
 
 
-// 📦 RESPONSE TYPE
+//  RESPONSE TYPE
 
 
 type ProcessFileResult = {
@@ -104,7 +104,7 @@ type ProcessFileResult = {
 };
 
 
-// 🚀 SERVICE
+//  SERVICE
 
 
 @Injectable()
@@ -137,13 +137,13 @@ export class DocumentService {
       throw new BadRequestException("Only PDF, DOCX, TXT allowed");
     }
 
-    // 🔥 HASH
+    //  HASH
     const hash = crypto
       .createHash('sha256')
       .update(file.buffer)
       .digest('hex');
 
-    // 🧠 DUPLICATE CHECK
+    //  DUPLICATE CHECK
     const existingVersion = await this.prisma.documentVersion.findFirst({
       where: {
         hash,
@@ -165,7 +165,7 @@ export class DocumentService {
       const existingChat = existingVersion.document.chats[0];
 
       return {
-        message: '⚠️ File already exists',
+        message: ' File already exists',
         documentId: existingVersion.documentId,
         versionId: existingVersion.id,
         chatSessionId: existingChat?.id || null,
@@ -175,7 +175,7 @@ export class DocumentService {
       };
     }
 
-    // 🔁 REPLACE
+    //  REPLACE
     if (existingVersion && replace) {
       const docId = existingVersion.documentId;
 
@@ -188,10 +188,10 @@ export class DocumentService {
       });
     }
 
-    // 📄 PARSE FILE
+    //  PARSE FILE
     const text = await this.parseFile(file);
 
-    // 🔍 FIND DOCUMENT
+    //  FIND DOCUMENT
     let document: any = await this.prisma.document.findFirst({
       where: { userId, name: file.originalname },
       include: {
@@ -199,7 +199,7 @@ export class DocumentService {
       },
     });
 
-    // 🆕 CREATE DOCUMENT
+    //  CREATE DOCUMENT
     if (!document) {
       document = await this.prisma.document.create({
         data: {
@@ -220,7 +220,7 @@ export class DocumentService {
 
       await this.storeChunks(text, version.id);
 
-      // 🔥 background processing
+      //  BACKGROUND PROCESSING
       setTimeout(() => {
         processFullDocumentInBackground(
           file.buffer,
@@ -238,7 +238,7 @@ export class DocumentService {
       });
 
       return {
-        message: '✅ Document uploaded',
+        message: ' Document uploaded',
         documentId: document.id,
         versionId: version.id,
         chatSessionId: chat.id,
@@ -248,7 +248,7 @@ export class DocumentService {
       };
     }
 
-    // 🔄 NEW VERSION
+    //  NEW VERSION
     const oldVersion = document.versions?.[0];
 
     const version = await this.prisma.documentVersion.create({
@@ -261,7 +261,7 @@ export class DocumentService {
 
     await this.storeChunks(text, version.id);
 
-    // 🔥 background processing
+    //  background processing
     setTimeout(() => {
       processFullDocumentInBackground(
         file.buffer,
@@ -279,7 +279,7 @@ export class DocumentService {
     });
 
     return {
-      message: '🟡 Document updated',
+      message: 'Document updated',
       documentId: document.id,
       versionId: version.id,
       chatSessionId: chat.id,
@@ -336,7 +336,7 @@ if (
         if (err) return reject(err);
 
         try {
-          // 🔥 Extract text from AST
+          // Extract text from AST
           let extractedText = "";
 
           const traverse = (node: any) => {
@@ -379,7 +379,7 @@ if (
   }
 
   
-  // ✂️ CHUNKING
+  //  CHUNKING
   
   chunkText(text: string): string[] {
     return text
@@ -390,7 +390,7 @@ if (
   }
 
   
-  // 🧠 STORE CHUNKS
+  //  STORE CHUNKS
   
   async storeChunks(text: string, versionId: number) {
     const chunks = this.chunkText(text);
@@ -398,20 +398,19 @@ if (
     for (const chunk of chunks) {
       const embedding = await this.ragService.getEmbedding(chunk);
       if (!embedding?.length) continue;
-
-      await this.prisma.$executeRawUnsafe(`
-        INSERT INTO "Chunk" (content, embedding, "versionId")
-        VALUES (
-          '${chunk.replace(/'/g, "''")}',
-          '[${embedding.join(',')}]'::vector,
-          ${versionId}
-        );
-      `);
+await this.prisma.$executeRawUnsafe(`
+  INSERT INTO "Chunk" (content, embedding, "versionId")
+  VALUES (
+    $1,
+    '[${embedding.join(',')}]'::vector,
+    $2
+  );
+`, chunk, versionId);
     }
   }
 
   
-  // 📂 SIDEBAR
+  //  SIDEBAR
   
   async getUserDocuments(userId: number) {
     return this.prisma.document.findMany({

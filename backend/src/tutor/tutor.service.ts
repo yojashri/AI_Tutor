@@ -337,54 +337,71 @@ RULES:
   //////////////////////////////////////////////////////
   // EVALUATION
   //////////////////////////////////////////////////////
-  async evaluateSlides(slides: Slide[]) {
-    const results: Evaluation[] = [];
+ async evaluateSlides(slides: Slide[]) {
 
-    for (const slide of slides) {
+  const prompt = `
+You are an expert PPT evaluator.
 
-      const prompt = `
+Evaluate ALL slides.
+
 Return ONLY JSON:
 
-{
- "score": number,
- "feedback": "short feedback"
-}
+[
+  {
+    "score": number,
+    "clarity": number,
+    "depth": number,
+    "structure": number,
+    "relevance": number,
+    "feedback": ""
+  }
+]
 
-Slide:
-${JSON.stringify(slide)}
+Slides:
+${JSON.stringify(slides)}
 `;
 
-      try {
-        const res = await axios.post(
-          "https://openrouter.ai/api/v1/chat/completions",
-          {
-            model: "meta-llama/llama-3-70b-instruct",
-            messages: [{ role: "user", content: prompt }],
-          },
-          {
-            headers: {
-              Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
-            },
-          }
-        );
-
-        const raw = res.data.choices[0].message.content;
-        const parsed = this.safeJsonParse(raw);
-
-        if (!parsed || !parsed.score) {
-          results.push({ score: 0, feedback: "Parsing failed" });
-        } else {
-          results.push(parsed);
-        }
-
-      } catch {
-        results.push({ score: 0, feedback: "Evaluation error" });
-      }
-    }
-
-    return results;
+  try {
+    const res = await axios.post(
+  "https://openrouter.ai/api/v1/chat/completions",
+  {
+    model: "meta-llama/llama-3-70b-instruct",
+    messages: [{ role: "user", content: prompt }],
+    temperature: 0.2
+  },
+  {
+    headers: {
+      Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
+    },
+    timeout: 15000 // ⏱️ 15 seconds
   }
+);
 
+    const raw = res.data.choices[0].message.content;
+
+   let parsed;
+
+try {
+  parsed = JSON.parse(raw.replace(/```json|```/g, "").trim());
+} catch {
+  console.error("JSON parse failed:", raw);
+}
+
+    return parsed;
+
+  } catch (err) {
+    console.error("Evaluation failed:", err.message);
+
+    return slides.map(() => ({
+      score: 0,
+      clarity: 0,
+      depth: 0,
+      structure: 0,
+      relevance: 0,
+      feedback: "Evaluation error",
+    }));
+  }
+}
   //////////////////////////////////////////////////////
   // MAIN PPT
   //////////////////////////////////////////////////////

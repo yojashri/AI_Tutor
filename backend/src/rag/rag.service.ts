@@ -13,9 +13,9 @@ export class RagService {
     private chatService: ChatService
   ) {}
 
-  //////////////////////////////////////////////////////
+  
   // EMBEDDING
-  //////////////////////////////////////////////////////
+  
   async getEmbedding(text: string): Promise<number[]> {
     try {
       if (!text || text.trim().length < 3) return [];
@@ -32,9 +32,9 @@ export class RagService {
     }
   }
 
-  //////////////////////////////////////////////////////
+  
   // SAFE JSON PARSER
-  //////////////////////////////////////////////////////
+  
   safeParseEval(content: string) {
     try {
       if (!content) return null;
@@ -46,18 +46,63 @@ export class RagService {
     }
   }
 
-  //////////////////////////////////////////////////////
+  
   // EVALUATION (70B)
-  //////////////////////////////////////////////////////
+  
   async evaluateAnswer(question: string, answer: string) {
-    const prompt = `
-Evaluate the answer.
+const prompt = `
+You are an expert evaluator for a Retrieval-Augmented Generation (RAG) system.
 
-Return ONLY JSON:
+Evaluate the answer STRICTLY and return ONLY JSON:
+
 {
   "score": number,
+  "clarity": number,
+  "depth": number,
+  "systemExplanation": number,
+  "relevance": number,
+  "contextMatch": number,
+  "hallucination": number,
+  "structure": number,
   "feedback": ""
 }
+
+==============================
+EVALUATION RULES
+==============================
+
+1. Clarity (0–10)
+- Easy to understand?
+
+2. Depth (0–10)
+- Not shallow? Includes detailed explanation?
+
+3. System Explanation (0–10)
+- Explains HOW things work internally?
+
+4. Relevance (0–10)
+- Matches the question?
+
+5. Context Match (0–10)
+- Uses ONLY given context?
+- Penalize if outside knowledge used
+
+6. Hallucination (0–10)
+- 10 = fully grounded
+- 0 = fully hallucinated
+
+7. Structure (0–10)
+- Proper headings, logical flow?
+
+==============================
+SCORING
+==============================
+
+Final score = average of all metrics × 10
+
+==============================
+INPUT
+==============================
 
 Question:
 ${question}
@@ -84,15 +129,27 @@ ${answer}
       const raw = res.data?.choices?.[0]?.message?.content;
       const parsed = this.safeParseEval(raw);
 
-      return parsed || { score: 0, feedback: "Evaluation failed" };
+      return (
+  parsed || {
+    score: 0,
+    clarity: 0,
+    depth: 0,
+    systemExplanation: 0,
+    relevance: 0,
+    contextMatch: 0,
+    hallucination: 0,
+    structure: 0,
+    feedback: "Evaluation failed",
+  }
+);
     } catch {
       return { score: 0, feedback: "Evaluation error" };
     }
   }
 
-  //////////////////////////////////////////////////////
+  
   // MAIN FUNCTION
-  //////////////////////////////////////////////////////
+  
   async askQuestion(
     question: string,
     versionId: number | null,
@@ -102,29 +159,21 @@ ${answer}
     const startTime = Date.now();
 
     try {
-      //////////////////////////////////////////////////////
       // VALIDATION
-      //////////////////////////////////////////////////////
       if (!question || question.trim().length < 3) {
         throw new BadRequestException("Invalid question");
       }
 
-      //////////////////////////////////////////////////////
       // CREATE CHAT
-      //////////////////////////////////////////////////////
       if (!chatSessionId) {
         const newChat = await this.chatService.createSession(userId, null, null);
         chatSessionId = newChat.id;
       }
 
-      //////////////////////////////////////////////////////
       // SAVE USER MESSAGE
-      //////////////////////////////////////////////////////
       await this.chatService.saveMessage(chatSessionId, "user", question);
 
-      //////////////////////////////////////////////////////
       // HYBRID RETRIEVAL
-      //////////////////////////////////////////////////////
       let context = "";
 
       if (versionId) {
@@ -170,7 +219,6 @@ ${answer}
         }
       }
 
-      //////////////////////////////////////////////////////
       // FALLBACK IF NO CONTEXT
  // 🚨 ONLY restrict when document mode is active
 if (versionId && (!context || context.trim().length < 20)) {
@@ -185,9 +233,9 @@ if (versionId && (!context || context.trim().length < 20)) {
     },
   };
 }
-//////////////////////////////////////////////////////
+
 // 📘 NORMAL CHAT MODE (NO DOCUMENT)
-//////////////////////////////////////////////////////
+
 if (!versionId) {
   const prompt = `
 You are an expert tutor for ${question}.
@@ -228,9 +276,7 @@ Explain clearly with:
   };
 }
 
-      //////////////////////////////////////////////////////
       // PROMPT
-      //////////////////////////////////////////////////////
 const prompt = `
 You are an expert AI Tutor teaching a university-level course.
 
@@ -328,9 +374,7 @@ You must explain like a PROFESSOR:
 - Maintain professional tone
 `;
 
-      //////////////////////////////////////////////////////
       // PRIMARY MODEL
-      //////////////////////////////////////////////////////
       let answer = "";
 
       try {
@@ -352,14 +396,12 @@ You must explain like a PROFESSOR:
         console.log("Primary model failed, switching to fallback");
       }
 
-      //////////////////////////////////////////////////////
       // FALLBACK MODEL
-      //////////////////////////////////////////////////////
       if (!answer || answer.length < 50) {
         const fallbackRes = await axios.post(
           "https://openrouter.ai/api/v1/chat/completions",
           {
-            model: "mistralai/mistral-7b-instruct",
+            model: "mistralai/mistral-70b-instruct",
             messages: [{ role: "user", content: prompt }],
           },
           {
@@ -374,9 +416,7 @@ You must explain like a PROFESSOR:
           "Failed to generate answer";
       }
 
-      //////////////////////////////////////////////////////
       // DUPLICATE CHECK
-      //////////////////////////////////////////////////////
       const lastMessages = await this.prisma.message.findMany({
         where: { chatSessionId },
         orderBy: { createdAt: "desc" },
@@ -389,46 +429,73 @@ You must explain like a PROFESSOR:
           m.content?.slice(0, 100) === answer.slice(0, 100)
       );
 
-      //////////////////////////////////////////////////////
       // EVALUATION
-      //////////////////////////////////////////////////////
-      const evaluation = await this.evaluateAnswer(question, answer);
+     const evaluation = await this.evaluateAnswer(question, answer);
 
-      //////////////////////////////////////////////////////
-      // TIME
-      //////////////////////////////////////////////////////
-      const executionTime = Date.now() - startTime;
+// 🔥 EXTRA INTELLIGENCE LAYER
 
-      //////////////////////////////////////////////////////
-      // SAVE RESPONSE
-      //////////////////////////////////////////////////////
-      await this.chatService.saveMessage(chatSessionId, "assistant", answer);
-
-      //////////////////////////////////////////////////////
-      // LOGS
-      //////////////////////////////////////////////////////
-      console.log("AI Analytics");
-      console.log("Question:", question);
-      console.log("Time:", executionTime);
-      console.log("Score:", evaluation.score);
-      console.log("Duplicate:", isDuplicate);
-
-      //////////////////////////////////////////////////////
-      // RETURN
-      //////////////////////////////////////////////////////
-      return {
-        answer,
-        chatSessionId,
-        evaluation,
-        meta: {
-          executionTime,
-          isDuplicate,
-        },
-      };
-
-    } catch (err: any) {
-      console.error("RAG Error:", err.message);
-      throw new BadRequestException("Failed to generate answer");
-    }
-  }
+// 1. Duplicate penalty
+if (isDuplicate) {
+  evaluation.score = Math.max(0, evaluation.score - 15);
+  evaluation.feedback += " Duplicate answer detected.";
 }
+
+// 2. Short answer penalty (low depth)
+if (answer.length < 300) {
+  evaluation.depth = Math.max(0, (evaluation.depth || 5) - 3);
+  evaluation.score -= 10;
+}
+
+// 3. Hallucination penalty (VERY IMPORTANT for RAG)
+if (evaluation.hallucination < 5) {
+  evaluation.score -= 20;
+  evaluation.feedback += " Possible hallucination detected.";
+}
+
+// 4. Context mismatch penalty
+if (evaluation.contextMatch < 6) {
+  evaluation.score -= 15;
+  evaluation.feedback += " Weak context grounding.";
+}
+
+// 5. Boost strong system explanation
+if (evaluation.systemExplanation > 8) {
+  evaluation.score += 5;
+}
+
+// Clamp score
+evaluation.score = Math.max(0, Math.min(100, evaluation.score));
+
+// TIME
+const executionTime = Date.now() - startTime;
+
+// SAVE RESPONSE
+await this.chatService.saveMessage(chatSessionId, "assistant", answer);
+
+// LOGS
+console.log("AI Analytics");
+console.log("Question:", question);
+console.log("Time:", executionTime);
+console.log("Score:", evaluation.score);
+console.log("Clarity:", evaluation.clarity);
+console.log("Depth:", evaluation.depth);
+console.log("Context Match:", evaluation.contextMatch);
+console.log("Hallucination:", evaluation.hallucination);
+console.log("Duplicate:", isDuplicate);
+
+// RETURN
+return {
+  answer,
+  chatSessionId,
+  evaluation,
+  meta: {
+    executionTime,
+    isDuplicate,
+  },
+};
+
+} catch (err: any) {
+  console.error("RAG Error:", err.message);
+  throw new BadRequestException("Failed to generate answer");
+}
+  }}

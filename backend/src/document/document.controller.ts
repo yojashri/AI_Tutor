@@ -20,16 +20,14 @@ import type { Express, Request } from 'express';
 export class DocumentController {
   constructor(private readonly documentService: DocumentService) {}
 
-  //////////////////////////////////////////////////////
-  // 🚀 UPLOAD DOCUMENT (ONLY ONE FUNCTION ✅)
-  //////////////////////////////////////////////////////
+  //  UPLOAD DOCUMENT 
   @Post('upload')
   @UseGuards(JwtAuthGuard)
   @UseInterceptors(FileInterceptor('file'))
   async upload(
     @UploadedFile() file: Express.Multer.File,
     @Req() req: Request & { user: any },
-    @Query('replace') replace?: string // ✅ FIXED
+    @Query('replace') replace?: string // FIXED
   ) {
     try {
       if (!file) {
@@ -41,7 +39,7 @@ export class DocumentController {
         throw new BadRequestException('Invalid user');
       }
 
-      const shouldReplace = replace === 'true'; // ✅ FIXED
+      const shouldReplace = replace === 'true'; //  FIXED
 
       console.log("📄 Upload:", file.originalname);
       console.log("👤 User:", userId);
@@ -50,7 +48,7 @@ export class DocumentController {
       const result = await this.documentService.processFile(
         file,
         userId,
-        shouldReplace // ✅ PASS THIS
+        shouldReplace // PASS THIS
       );
 
       return {
@@ -59,7 +57,7 @@ export class DocumentController {
       };
 
     } catch (error: any) {
-      console.error('❌ Upload Error:', error.message);
+      console.error(' Upload Error:', error.message);
 
       throw new HttpException(
         {
@@ -71,9 +69,7 @@ export class DocumentController {
     }
   }
 
-  //////////////////////////////////////////////////////
-  // 📂 GET USER DOCUMENTS
-  //////////////////////////////////////////////////////
+  //  GET USER DOCUMENTS
   @Get('my-documents')
   @UseGuards(JwtAuthGuard)
   async getMyDocuments(@Req() req: Request & { user: any }) {

@@ -101,91 +101,107 @@ export class PptService {
       align: "center"
     });
 
-    let slides = data.slides || [];
+   let slides = data.slides || [];
 
-    
+// 🔥 LIMIT SLIDES STRICTLY
+// totalSlides includes title also
+const maxContentSlides = totalSlides - 1;
 
-    // ===== LOOP =====
-    for (let idx = 0; idx < slides.length && slideCount < totalSlides; idx++) {
+// If AI gives more slides → trim
+if (slides.length > maxContentSlides) {
+  slides = slides.slice(0, maxContentSlides);
+}
 
-      const slideData = slides[idx];
-      if (!slideData || !slideData.heading) continue;
+// If AI gives less → no issue
 
-      const heading = this.cleanText(slideData.heading);
-      const rawPoints = (slideData.points || []).map(p => this.cleanText(p));
+// ===== LOOP =====
+for (let idx = 0; idx < slides.length; idx++) {
 
-      const isAlgorithm = heading.toLowerCase().includes("algorithm");
+  // 🚫 STOP if exceeding limit
+  if (slideCount >= totalSlides) break;
 
-      let visualRendered = false;
-      let imagePath: string | null = null;
+  const slideData = slides[idx];
+  if (!slideData || !slideData.heading) continue;
 
-      try {
-        if (
-          !isAlgorithm &&
-          slideData.diagramCode &&
-          this.shouldShowDiagram(heading) &&
-          this.isValidMermaid(slideData.diagramCode)
-        ) {
-          imagePath = await this.generateDiagram(
-            slideData.diagramCode,
-            `diag-${Date.now()}`
-          );
-          visualRendered = true;
-        }
-        else if (!isAlgorithm && this.shouldShowImage(heading)) {
+  const heading = this.cleanText(slideData.heading);
 
-          const query = this.buildImageQuery(data.title, heading);
-          const url = await this.fetchImage(query);
+  // 🔥 FORCE last slide as conclusion
+  const isLastSlide = slideCount === totalSlides - 1;
 
-          if (url) {
-            imagePath = await this.downloadImage(url, `img-${Date.now()}`);
-            visualRendered = true;
-          }
-        }
+  const finalHeading = isLastSlide ? "Conclusion" : heading;
 
-      } catch {
-        visualRendered = false;
-      }
+  const rawPoints = (slideData.points || []).map(p => this.cleanText(p));
 
-      // ===== BULLETS =====
-      let points = rawPoints
-        .filter(p => p && p.length > 10)
-        .slice(0, visualRendered ? 3 : 5);
+  const isAlgorithm = finalHeading.toLowerCase().includes("algorithm");
 
-      const slide = pptx.addSlide();
-      slideCount++;
+  let visualRendered = false;
+  let imagePath: string | null = null;
 
-      slide.addText(heading, {
-        x: 0.5,
-        y: 0.4,
-        fontSize: 28,
-        bold: true
-      });
-
-      slide.addText(
-        points.map(p => ({
-          text: p,
-          options: { bullet: true }
-        })),
-        {
-          x: 0.7,
-          y: 2.2,
-          w: visualRendered ? 4.5 : 8.5,
-          fontSize: visualRendered ? 18 : 20
-        }
+  try {
+    if (
+      !isAlgorithm &&
+      slideData.diagramCode &&
+      this.shouldShowDiagram(finalHeading) &&
+      this.isValidMermaid(slideData.diagramCode)
+    ) {
+      imagePath = await this.generateDiagram(
+        slideData.diagramCode,
+        `diag-${Date.now()}`
       );
+      visualRendered = true;
+    }
+    else if (!isAlgorithm && this.shouldShowImage(finalHeading)) {
 
-      if (visualRendered && imagePath) {
-        slide.addImage({
-          path: imagePath,
-          x: 5.5,
-          y: 2,
-          w: 4,
-          h: 3
-        });
+      const query = this.buildImageQuery(data.title, finalHeading);
+      const url = await this.fetchImage(query);
+
+      if (url) {
+        imagePath = await this.downloadImage(url, `img-${Date.now()}`);
+        visualRendered = true;
       }
     }
 
+  } catch {
+    visualRendered = false;
+  }
+
+  let points = rawPoints
+    .filter(p => p && p.length > 10)
+    .slice(0, visualRendered ? 3 : 5);
+
+  const slide = pptx.addSlide();
+  slideCount++;
+
+  slide.addText(finalHeading, {
+    x: 0.5,
+    y: 0.3,
+    fontSize: 28,
+    bold: true
+  });
+
+  slide.addText(
+    points.map(p => ({
+      text: p,
+      options: { bullet: true }
+    })),
+    {
+      x: 0.7,
+      y: 2.0,
+      w: visualRendered ? 4.5 : 8.5,
+      fontSize: visualRendered ? 18 : 20
+    }
+  );
+
+  if (visualRendered && imagePath) {
+    slide.addImage({
+      path: imagePath,
+      x: 5.5,
+      y: 2,
+      w: 4,
+      h: 3
+    });
+  }
+}
     const fileName = `ppt-${Date.now()}.pptx`;
     const filePath = path.join(__dirname, '../../', fileName);
 

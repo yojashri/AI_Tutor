@@ -12,9 +12,9 @@ export class AuthService {
     private jwtService: JwtService
   ) {}
 
-  //////////////////////////////////////////////////////
-  // ✅ REGISTER
-  //////////////////////////////////////////////////////
+  
+  // REGISTER
+  
   async register(dto: RegisterDto) {
     const hashed = await bcrypt.hash(dto.password, 10);
 
@@ -29,9 +29,9 @@ export class AuthService {
     return { message: "User registered", user };
   }
 
-  //////////////////////////////////////////////////////
+  
   // ✅ VALIDATE USER
-  //////////////////////////////////////////////////////
+  
   async validateUser(dto: LoginDto) {
     const user = await this.prisma.user.findUnique({
       where: { email: dto.email },
@@ -50,9 +50,9 @@ export class AuthService {
     return user;
   }
 
-  //////////////////////////////////////////////////////
+  
   // ✅ LOGIN
-  //////////////////////////////////////////////////////
+  
   async login(dto: LoginDto) {
     const user = await this.validateUser(dto);
 
@@ -83,9 +83,9 @@ export class AuthService {
     };
   }
 
-  //////////////////////////////////////////////////////
+  
   // 🔄 REFRESH TOKEN
-  //////////////////////////////////////////////////////
+  
   async refreshToken(token: string) {
     try {
       const payload = this.jwtService.verify(token);
@@ -109,9 +109,9 @@ export class AuthService {
     }
   }
 
-  //////////////////////////////////////////////////////
+  
   // 🚪 LOGOUT
-  //////////////////////////////////////////////////////
+  
   async logout(userId: number) {
     await this.prisma.user.update({
       where: { id: userId },

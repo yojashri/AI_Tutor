@@ -9,9 +9,9 @@ import { PrismaService } from "../prisma/prisma.service";
 export class ChatService {
   constructor(private prisma: PrismaService) {}
 
-  //////////////////////////////////////////////////////
-  // 💬 CREATE CHAT SESSION (FIXED ORDER 🔥)
-  //////////////////////////////////////////////////////
+  
+  //  CREATE CHAT SESSION (FIXED ORDER 🔥)
+  
   async createSession(
     userId: number,
     documentId: number | null,
@@ -30,9 +30,9 @@ export class ChatService {
     });
   }
 
-  //////////////////////////////////////////////////////
-  // 💾 SAVE MESSAGE
-  //////////////////////////////////////////////////////
+  
+  //  SAVE MESSAGE
+  
   async saveMessage(
     chatSessionId: number,
     role: "user" | "assistant",
@@ -55,9 +55,9 @@ export class ChatService {
     });
   }
 
-  //////////////////////////////////////////////////////
-  // 📥 GET MESSAGES
-  //////////////////////////////////////////////////////
+  
+  //  GET MESSAGES
+  
   async getMessages(chatSessionId: number, userId: number) {
     const chat = await this.prisma.chatSession.findFirst({
       where: {
@@ -82,9 +82,9 @@ export class ChatService {
     };
   }
 
-  //////////////////////////////////////////////////////
-  // ❌ DELETE CHAT
-  //////////////////////////////////////////////////////
+  
+  //  DELETE CHAT
+  
   async deleteChat(chatSessionId: number, userId: number) {
     const chat = await this.prisma.chatSession.findFirst({
       where: {
@@ -104,9 +104,9 @@ export class ChatService {
     return { message: "Chat deleted ✅" };
   }
 
-  //////////////////////////////////////////////////////
-  // 📊 GET USER CHATS (SIDEBAR 🔥 FINAL)
-  //////////////////////////////////////////////////////
+  
+  //  GET USER CHATS (SIDEBAR  FINAL)
+  
   async getUserChats(userId: number) {
     if (!userId) {
       throw new BadRequestException("Invalid user");
@@ -114,7 +114,7 @@ export class ChatService {
 
     const chats = await this.prisma.chatSession.findMany({
       where: { userId },
-      orderBy: { createdAt: "desc" }, // 🔥 IMPORTANT
+      orderBy: { createdAt: "desc" }, //  IMPORTANT
       include: {
         document: true,
         messages: {
@@ -124,9 +124,9 @@ export class ChatService {
       },
     });
 
-    ////////////////////////////////////////////
-    // 🔥 FORMAT FOR SIDEBAR
-    ////////////////////////////////////////////
+   
+    // FORMAT FOR SIDEBAR
+   
     return chats.map((chat) => ({
       id: chat.id,
       versionId: chat.versionId ?? null,
@@ -134,15 +134,15 @@ export class ChatService {
       createdAt: chat.createdAt,
 
       title:
-        chat.document?.name || // 📄 doc
+        chat.document?.name || //  doc
         chat.messages?.[0]?.content?.slice(0, 40) || // 💬 first question
         "New Chat",
     }));
   }
 
-  //////////////////////////////////////////////////////
-  // 🔍 GET QUESTIONS
-  //////////////////////////////////////////////////////
+  
+  // GET QUESTIONS
+  
   async getQuestions(chatSessionId: number, userId: number) {
     const chat = await this.prisma.chatSession.findFirst({
       where: {

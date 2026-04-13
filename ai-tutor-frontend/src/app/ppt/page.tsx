@@ -23,9 +23,9 @@ export default function PPTPage() {
   const finalCourse =
     course === "Other" ? customCourse.trim() : course;
 
-  ////////////////////////////////////////////
-  // 🔐 AUTH CHECK
-  ////////////////////////////////////////////
+  
+  // AUTH CHECK
+  
   useEffect(() => {
     const checkAuth = async () => {
       try {
@@ -41,21 +41,25 @@ export default function PPTPage() {
     checkAuth();
   }, []);
 
-  ////////////////////////////////////////////
-  // 🚀 GENERATE PPT
-  ////////////////////////////////////////////
+  
+  // GENERATE PPT
+  
   const handleGenerate = async () => {
-    if (!finalCourse || !topic) {
-      toast.error("Enter course & topic");
-      return;
-    }
+  if (!finalCourse || !topic) {
+    toast.error("Enter course & topic");
+    return;
+  }
 
-    const ctrl = new AbortController();
-    setController(ctrl);
+  if (slides < 8 || slides > 15) {
+    toast.error("Slides count should be between 8 and 15");
+    return;
+  }
 
-    setLoading(true);
-    toast.loading("Generating PPT...");
+  const ctrl = new AbortController();
+  setController(ctrl);
 
+  setLoading(true);
+  toast.loading("Generating PPT...");
     try {
       const res = await axios.post(
         "http://localhost:5000/tutor/generate-ppt",
@@ -73,7 +77,7 @@ export default function PPTPage() {
       setData(res.data);
 
       toast.dismiss();
-      toast.success("✅ PPT Generated!");
+      toast.success(" PPT Generated!");
 
     } catch (e: any) {
       toast.dismiss();
@@ -88,17 +92,17 @@ export default function PPTPage() {
     }
   };
 
-  ////////////////////////////////////////////
-  // ⛔ STOP
-  ////////////////////////////////////////////
+  
+  //  STOP
+  
   const handleStop = () => {
     controller?.abort();
     setLoading(false);
   };
 
-  ////////////////////////////////////////////
-  // 📥 DOWNLOAD
-  ////////////////////////////////////////////
+  
+  //  DOWNLOAD
+  
   const handleDownload = () => {
     downloadPPT(data.file);
     toast.success("Downloaded!");
@@ -108,18 +112,18 @@ export default function PPTPage() {
     setShowPreview(false);
   };
 
-  ////////////////////////////////////////////
-  // 🎨 UI
-  ////////////////////////////////////////////
+  
+  //  UI
+  
   return (
     <div className="min-h-screen bg-gray-100 flex flex-col">
 
-      {/* 🔥 HEADER */}
+      {/*  HEADER */}
       <Header />
 
     
 
-      {/* 🔥 MAIN */}
+      {/*  MAIN */}
       <div className="flex flex-col items-center p-6 gap-6">
 
         {/* CARD */}
@@ -155,7 +159,15 @@ export default function PPTPage() {
           <input
             type="number"
             value={slides}
-            onChange={(e) => setSlides(Number(e.target.value))}
+            onChange={(e) => {
+  const value = e.target.value;
+
+  if (value === "") {
+    setSlides(0); // or null if you prefer
+  } else {
+    setSlides(Number(value));
+  }
+}}
             className="p-3 border rounded-lg w-full"
           />
 
@@ -207,7 +219,7 @@ export default function PPTPage() {
           )}
         </div>
 
-        {/* 🔥 PREVIEW */}
+        {/* PREVIEW */}
         {showPreview && data && (
           <div className="w-full max-w-6xl">
 

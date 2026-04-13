@@ -35,9 +35,9 @@ const controllerRef = useRef<AbortController | null>(null);
 
   const bottomRef = useRef<any>(null);
 
-  //////////////////////////////////////////////////////
+ 
   // AUTH
-  //////////////////////////////////////////////////////
+ 
   useEffect(() => {
     axios.defaults.withCredentials = true;
 
@@ -47,9 +47,9 @@ const controllerRef = useRef<AbortController | null>(null);
     });
   }, []);
 
-  //////////////////////////////////////////////////////
+ 
   // LOAD CHATS
-  //////////////////////////////////////////////////////
+ 
   useEffect(() => {
     loadChats();
   }, []);
@@ -63,9 +63,9 @@ const controllerRef = useRef<AbortController | null>(null);
     }
   };
 
-  //////////////////////////////////////////////////////
-  // LOGOUT 🔥
-  //////////////////////////////////////////////////////
+ 
+  // LOGOUT 
+ 
   const logout = async () => {
     try {
       await axios.post("http://localhost:5000/auth/logout");
@@ -76,9 +76,9 @@ const controllerRef = useRef<AbortController | null>(null);
     }
   };
 
-  //////////////////////////////////////////////////////
+ 
   // OPEN CHAT
-  //////////////////////////////////////////////////////
+ 
   const openChat = async (chatId: number) => {
     if (!chatId || isNaN(chatId)) return;
 
@@ -112,12 +112,12 @@ const controllerRef = useRef<AbortController | null>(null);
     }
   };
 
-  //////////////////////////////////////////////////////
-  // DELETE CHAT (CONFIRM 🔥)
-  //////////////////////////////////////////////////////
+ 
+  // DELETE CHAT 
+ 
   const removeChat = async (chatId: number) => {
     const confirmDelete = window.confirm(
-      "⚠️ Are you sure you want to delete this chat?\nThis cannot be undone."
+      " Are you sure you want to delete this chat?\nThis cannot be undone."
     );
 
     if (!confirmDelete) return;
@@ -134,9 +134,9 @@ const controllerRef = useRef<AbortController | null>(null);
     }
   };
 
-  //////////////////////////////////////////////////////
+ 
   // NEW CHAT
-  //////////////////////////////////////////////////////
+ 
   const newChat = () => {
     setActiveChat(null);
     setMessages([]);
@@ -145,9 +145,9 @@ const controllerRef = useRef<AbortController | null>(null);
     setChatFiles([]);
   };
 
-  //////////////////////////////////////////////////////
+ 
   // UPLOAD
-  //////////////////////////////////////////////////////
+ 
  const upload = async () => {
   const files = fileRef.current?.files;
 
@@ -166,19 +166,19 @@ const controllerRef = useRef<AbortController | null>(null);
       // 🔥 FIRST TRY (NORMAL UPLOAD)
       const res = await uploadDocument(formData, false);
 
-      //////////////////////////////////////////////////////
+     
       // 🔥 DUPLICATE FILE DETECTED
-      //////////////////////////////////////////////////////
+     
       if (res.data.reused) {
         toast.dismiss();
 
         const action = window.confirm(
-          `⚠️ "${file.name}" already exists.\n\nOK → Replace file\nCancel → Continue existing chat`
+          ` "${file.name}" already exists.\n\nOK → Replace file\nCancel → Continue existing chat`
         );
 
-        //////////////////////////////////////////////////////
-        // 🔁 REPLACE FLOW
-        //////////////////////////////////////////////////////
+       
+        //  REPLACE FLOW
+       
         if (action) {
           toast.loading("Replacing document...");
 
@@ -190,9 +190,9 @@ const controllerRef = useRef<AbortController | null>(null);
           await openChat(replaceRes.data.chatSessionId);
         }
 
-        //////////////////////////////////////////////////////
-        // 🔄 CONTINUE EXISTING CHAT
-        //////////////////////////////////////////////////////
+       
+        //  CONTINUE EXISTING CHAT
+       
         else {
           toast.success("Opening existing chat 📂");
 
@@ -200,17 +200,17 @@ const controllerRef = useRef<AbortController | null>(null);
         }
       }
 
-      //////////////////////////////////////////////////////
-      // ✅ NEW FILE
-      //////////////////////////////////////////////////////
+     
+      //  NEW FILE
+     
       else {
         await openChat(res.data.chatSessionId);
-        toast.success("Upload complete 🚀");
+        toast.success("Upload complete ");
       }
 
-      //////////////////////////////////////////////////////
-      // 📄 FILE TAG UI UPDATE
-      //////////////////////////////////////////////////////
+     
+      // FILE TAG UI UPDATE
+     
       setChatFiles((prev) =>
         prev.includes(file.name) ? prev : [...prev, file.name]
       );
@@ -233,9 +233,9 @@ const controllerRef = useRef<AbortController | null>(null);
   }
 };
 
-  //////////////////////////////////////////////////////
+ 
   // ASK
-  //////////////////////////////////////////////////////
+ 
  const ask = async () => {
   const finalCourse = course === "Other" ? customCourse : course;
 
@@ -250,14 +250,14 @@ const controllerRef = useRef<AbortController | null>(null);
   const tempId = Date.now();
   const currentQuestion = question;
 
-  //////////////////////////////////////////////////////
+ 
   // CLEAR INPUT IMMEDIATELY
-  //////////////////////////////////////////////////////
+ 
   setQuestion("");
 
-  //////////////////////////////////////////////////////
+ 
   // ADD USER MESSAGE
-  //////////////////////////////////////////////////////
+ 
   setMessages((prev) => [
     ...prev,
     { id: tempId, role: "user", content: currentQuestion },
@@ -271,7 +271,7 @@ const controllerRef = useRef<AbortController | null>(null);
       {
         question: currentQuestion,
 
-        // ✅ ONLY send versionId if exists
+        //  ONLY send versionId if exists
         ...(versionId ? { versionId } : {}),
 
         chatSessionId: activeChat,
@@ -282,9 +282,9 @@ const controllerRef = useRef<AbortController | null>(null);
 
     let answer = res.data.answer;
 
-    //////////////////////////////////////////////////////
-    // ✅ HANDLE DOCUMENT MODE ONLY
-    //////////////////////////////////////////////////////
+   
+    //  HANDLE DOCUMENT MODE ONLY
+   
     if (
       versionId &&
       (
@@ -325,20 +325,20 @@ const stopGenerating = () => {
   }
   setLoading(false);
 };
-  //////////////////////////////////////////////////////
+ 
   // AUTO SCROLL
-  //////////////////////////////////////////////////////
+ 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  //////////////////////////////////////////////////////
+ 
   // UI
-  //////////////////////////////////////////////////////
+ 
   return (
     
 <div className="h-screen flex flex-col overflow-hidden">
-      {/* 🔥 HEADER */}
+      {/*  HEADER */}
      <Header/>
 
       <div className="flex flex-1 overflow-hidden">
@@ -438,7 +438,7 @@ const stopGenerating = () => {
           <div className="flex-1 overflow-y-auto p-6 space-y-4">
             {messages.map((msg) => (
              <div
-  id={`msg-${msg.id}`} // ✅ IMPORTANT
+  id={`msg-${msg.id}`} // IMPORTANT
   key={msg.id}
   className={`flex ${
     msg.role === "user" ? "justify-end" : "justify-start"
